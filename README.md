@@ -1,7 +1,9 @@
-# Podcast Scammer
+# PremoScammo
+
+Server that sends e-mail notifications for new podcast releases on Kemono Party
 
 ### To-Do
 
-1. Make startdate dynamic
-2. Deploy server, run periodically (~6 times a day)
-3. Download files to server/mail file directly
+- [ ] Deploy server
+- [ ] Look into ways to download file directly (2-3 max, most recent)
+- [ ] Shift to API and notify directly on mobile (Power Automate)

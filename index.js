@@ -2,6 +2,8 @@ require("dotenv").config({ path: ".env" });
 
 const express = require("express");
 const cors = require("cors");
+const nodeCron = require("node-cron");
+const {LocalStorage} = require('node-localstorage'); 
 const axios = require("axios");
 const jsdom = require("jsdom");
 const nodemailer = require("nodemailer");
@@ -18,19 +20,23 @@ let transporter = nodemailer.createTransport({
   },
 });
 
-let startdate = "2023-02-20T16:17:26.493Z";
+let initStartDate = "2023-02-20 16:17:26";          // Replace with Date.now().toISOString() to get current date and time at the time of deployment
+let localStorage = new LocalStorage('./scratch');
+localStorage.setItem('startDate', initStartDate) 
 
 const app = express();
 app.use(cors());
 
-app.listen(port, () => {
-  console.log(`Server started on port ${port}`);
-
+async function mailerFunc () {
   axios
     .get(url)
     .then((response) => {
-      let newenddate = startdate;
-      let newlinks = [];
+      let oldStartDate = localStorage.getItem('startDate');
+      let newEndDate = oldStartDate;
+      let newLinks = [];
+
+      //console.log("Old startdate: " + oldStartDate + "\n");
+      
       const dom = new JSDOM(response.data);
       const links = dom.window.document.querySelectorAll(
         "article.post-card > a"
@@ -39,24 +45,30 @@ app.listen(port, () => {
         "footer.post-card__footer > time"
       );
       for (let i = 0; i < links.length; i++) {
-        if (dts[i].dateTime > startdate) {
-          newlinks.push(links[i].href);
+        if (dts[i].dateTime > oldStartDate) {
+          newLinks.push(links[i].href);
           newenddate = dts[i].dateTime;
+          if(i==0){
+            newEndDate = dts[i].dateTime;
+          }
         } else {
           break;
         }
       }
-      startdate = newenddate;
-      console.log("New startdate: " + startdate + "\n");
-      return newlinks;
+      localStorage.setItem('startDate', newEndDate);
+      //console.log("New starting date: " + newEndDate + "\n");
+
+      return newLinks;
     })
 
     .then(async (links) => {
-      let linkstomail = [],
+      if(links == undefined || links.length == 0){
+        return links;
+      }
+      let linksToMail = [],
         promises = [];
       links.forEach((link) => {
-        const url = "https://kemono.party" + link;
-        promises.push(axios.get(url));
+        promises.push(axios.get("https://kemono.party" + link));
       });
 
       await Promise.all(promises).then(function (results) {
@@ -70,25 +82,28 @@ app.listen(port, () => {
           } else {
             filelink = filelink.href;
           }
-          console.log(filelink);
-          linkstomail.push(filelink);
+          //console.log(filelink);
+          linksToMail.push(filelink);
         });
       });
 
-      return linkstomail;
+      return linksToMail;
     })
 
     .then((links) => {
-      let mailcontent = "Links to new Episodes:\n\n";
+      if(links == undefined || links.length == 0){
+        return;
+      }
+      let mailContent = "Links to new episodes:\n\n";
       links.forEach((link) => {
-        mailcontent += link + "\n";
+        mailContent += link + "\n";
       });
-      mailcontent += "\n" + "Enjoy :)";
+      mailContent += "\n" + "Enjoy :)";
       let mailOptions = {
-        from: "gordonmcjordan@gmail.com",
-        to: "gordonmcjordan@gmail.com",
+        from: process.env.EMAIL,
+        to: process.env.TOMAIL,
         subject: "New podcast just dropped!!",
-        text: mailcontent,
+        text: mailContent,
       };
 
       transporter.sendMail(mailOptions, (err, data) => {
@@ -102,4 +117,11 @@ app.listen(port, () => {
     .catch((error) => {
       console.log(error);
     });
+}
+
+app.listen(port, () => {
+  console.log(`Server started on port ${port}`);
 });
+
+
+const  mailerJob = nodeCron.schedule("* */4 * * *", mailerFunc); // runs every 4 hours
